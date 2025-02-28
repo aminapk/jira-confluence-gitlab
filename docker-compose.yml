@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/ssl:/etc/nginx/ssl
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - jira
+      - confluence
+      - gitlab
+    restart: unless-stopped
+
+  jira:
+    image: atlassian/jira-software:latest
+    container_name: jira
+    expose:
+      - "8080"
+    environment:
+      - ATL_JDBC_URL=jdbc:postgresql://jira-db:5432/jiradb
+      - ATL_JDBC_USER=jira
+      - ATL_JDBC_PASSWORD=jira_password
+      - ATL_DB_DRIVER=org.postgresql.Driver
+      - JVM_MINIMUM_MEMORY=1024m
+      - JVM_MAXIMUM_MEMORY=4096m
+    volumes:
+      - jira-data:/var/atlassian/application-data/jira
+    depends_on:
+      - jira-db
+    restart: unless-stopped
+
+  jira-db:
+    image: postgres:14
+    container_name: jira-db
+    environment:
+      - POSTGRES_USER=jira
+      - POSTGRES_PASSWORD=jira_password
+      - POSTGRES_DB=jiradb
+    volumes:
+      - jira-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  confluence:
+    image: atlassian/confluence:latest
+    container_name: confluence
+    expose:
+      - "8090"
+      - "8091"
+    environment:
+      - ATL_JDBC_URL=jdbc:postgresql://confluence-db:5432/confluencedb
+      - ATL_JDBC_USER=confluence
+      - ATL_JDBC_PASSWORD=confluence_password
+      - ATL_DB_TYPE=postgresql
+      - ATL_DB_DRIVER=org.postgresql.Driver
+      - JVM_MINIMUM_MEMORY=1024m
+      - JVM_MAXIMUM_MEMORY=4096m
+    volumes:
+      - confluence-data:/var/atlassian/application-data/confluence
+    depends_on:
+      - confluence-db
+    restart: unless-stopped
+
+  confluence-db:
+    image: postgres:14
+    container_name: confluence-db
+    environment:
+      - POSTGRES_USER=confluence
+      - POSTGRES_PASSWORD=confluence_password
+      - POSTGRES_DB=confluencedb
+    volumes:
+      - confluence-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab
+    hostname: gitlab.example.com
+    ports:
+      - "2222:22"
+    expose:
+      - "80"
+      - "22"
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://gitlab.example.com'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2222
+        gitlab_rails['initial_root_password'] = "YourSecurePassword123"
+        gitlab_rails['db_adapter'] = "postgresql"
+        gitlab_rails['db_database'] = "gitlabhq_production"
+        gitlab_rails['db_username'] = "gitlab"
+        gitlab_rails['db_password'] = "gitlab_password"
+        gitlab_rails['db_host'] = "gitlab-db"
+        gitlab_rails['redis_host'] = "gitlab-redis"
+        gitlab_rails['redis_port'] = 6379
+        gitlab_rails['smtp_enable'] = false
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+        nginx['proxy_set_headers'] = {
+          "X-Forwarded-Proto" => "https",
+          "X-Forwarded-Ssl" => "on",
+          "Host" => "gitlab.example.com"
+        }
+    volumes:
+      - gitlab-config:/etc/gitlab
+      - gitlab-logs:/var/log/gitlab
+      - gitlab-data:/var/opt/gitlab
+    depends_on:
+      - gitlab-db
+      - gitlab-redis
+    restart: unless-stopped
+
+  gitlab-db:
+    image: postgres:14
+    container_name: gitlab-db
+    environment:
+      - POSTGRES_USER=gitlab
+      - POSTGRES_PASSWORD=gitlab_password
+      - POSTGRES_DB=gitlabhq_production
+    volumes:
+      - gitlab-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  gitlab-redis:
+    image: redis:latest
+    container_name: gitlab-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - gitlab-redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  jira-data:
+  jira-postgres-data:
+  confluence-data:
+  confluence-postgres-data:
+  gitlab-config:
+  gitlab-logs:
+  gitlab-data:
+  gitlab-postgres-data:
+  gitlab-redis-data:
